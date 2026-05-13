@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>กำลังเข้าสู่ระบบ...</title>
+<script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { 
+    font-family: 'Sarabun', sans-serif; 
+    background: linear-gradient(135deg, #f3e8ff 0%, #fce7f3 100%);
+    min-height: 100vh;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+  .pulse { animation: pulse 1.5s infinite; }
+</style>
+</head>
+<body class="flex items-center justify-center p-6">
+
+<div id="loadingBox" class="bg-white rounded-3xl p-8 shadow-2xl text-center max-w-sm w-full">
+  <div class="text-6xl mb-4 pulse">🔐</div>
+  <h1 class="text-lg font-bold text-violet-700 mb-2">กำลังเข้าสู่ระบบ</h1>
+  <p id="statusText" class="text-xs text-slate-500">รอสักครู่...</p>
+</div>
+
+<div id="errorBox" class="hidden bg-white rounded-3xl p-8 shadow-2xl text-center max-w-sm w-full">
+  <div class="text-6xl mb-4">⚠️</div>
+  <h1 class="text-lg font-bold text-rose-600 mb-2">เกิดข้อผิดพลาด</h1>
+  <p id="errorMsg" class="text-xs text-slate-600 mb-4">-</p>
+  <p class="text-[11px] text-slate-400">กรุณาลองใหม่หรือติดต่อ HR</p>
+</div>
+
+<div id="registerHint" class="hidden bg-white rounded-3xl p-8 shadow-2xl text-center max-w-sm w-full">
+  <div class="text-6xl mb-4">👋</div>
+  <h1 class="text-lg font-bold text-violet-700 mb-2">ยังไม่ได้ลงทะเบียน</h1>
+  <p class="text-xs text-slate-600 mb-4">กรุณาเปิดเมนู "📸 ลงเวลาเข้างาน" เพื่อลงทะเบียนก่อนใช้งานเมนูอื่น</p>
+  <button onclick="openRegisterLiff()" class="px-6 py-3 bg-violet-600 text-white rounded-xl font-bold text-sm">
+    🔓 ไปลงทะเบียน
+  </button>
+</div>
+
+<script>
+const LIFF_ID = '2010080308-vAnB7tAM';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbycsbA-O-0GTpjIPAhd-eOMM_MpQ29R11s7FyZxuqtim9-oIoN0CEYSO6UZHajLlOFh/exec';
+
+// ดึง view parameter จาก URL
+function getViewParam() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get('view') || 'main';
+}
+
+function setStatus(text) {
+  document.getElementById('statusText').textContent = text;
+}
+
+function showError(msg) {
+  document.getElementById('loadingBox').classList.add('hidden');
+  document.getElementById('errorBox').classList.remove('hidden');
+  document.getElementById('errorMsg').textContent = msg;
+}
+
+function showRegisterHint() {
+  document.getElementById('loadingBox').classList.add('hidden');
+  document.getElementById('registerHint').classList.remove('hidden');
+}
+
+function openRegisterLiff() {
+  window.location.href = 'https://liff.line.me/' + LIFF_ID;
+}
+
+async function callBackend(payload) {
+  const response = await fetch(APPS_SCRIPT_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain' },
+    body: JSON.stringify(payload)
+  });
+  return await response.json();
+}
+
+async function init() {
+  try {
+    setStatus('เชื่อมต่อ LINE...');
+    await liff.init({ liffId: LIFF_ID });
+    
+    if (!liff.isLoggedIn()) {
+      liff.login();
+      return;
+    }
+    
+    setStatus('ตรวจสอบบัญชี...');
+    const profile = await liff.getProfile();
+    const lineUserId = profile.userId;
+    
+    setStatus('ขอ token...');
+    // เรียก Backend ขอ token
+    const result = await callBackend({
+      action: 'liff_get_login_token',
+      lineUserId: lineUserId
+    });
+    
+    if (!result.success) {
+      if (result.notRegistered) {
+        showRegisterHint();
+      } else {
+        showError(result.error || 'ไม่สามารถสร้าง token ได้');
+      }
+      return;
+    }
+    
+    setStatus('เปิดระบบ...');
+    
+    // Redirect ไปหน้า Attendance พร้อม token + view
+    const view = getViewParam();
+    const targetUrl = APPS_SCRIPT_URL 
+      + '?page=attendance'
+      + '&liff_token=' + encodeURIComponent(result.token)
+      + '&view=' + encodeURIComponent(view);
+    
+    window.location.replace(targetUrl);
+    
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+window.addEventListener('load', init);
+</script>
+
+</body>
+</html>
