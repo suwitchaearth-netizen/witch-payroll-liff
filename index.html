@@ -50,16 +50,16 @@
     
     <div class="space-y-3">
       <div>
-        <label class="text-xs text-slate-600 font-bold block mb-1">รหัสพนักงาน</label>
-        <input id="regEmpId" type="text" placeholder="TWG010" 
+        <label class="text-xs text-slate-600 font-bold block mb-1">เลขบัตรประชาชน (13 หลัก)</label>
+        <input id="regCardNo" type="text" placeholder="1234567890123" inputmode="numeric" maxlength="13" 
           class="w-full px-4 py-3 bg-slate-50 rounded-xl text-sm uppercase font-bold" />
       </div>
       
       <div>
-        <label class="text-xs text-slate-600 font-bold block mb-1">วันเกิด (วว/ดด/ปปปป)</label>
-        <input id="regBirth" type="text" placeholder="15/05/1990" inputmode="numeric"
+        <label class="text-xs text-slate-600 font-bold block mb-1">วันเกิด (ววดดปปปป)</label>
+        <input id="regBirth" type="text" placeholder="15051990" inputmode="numeric" maxlength="8"
           class="w-full px-4 py-3 bg-slate-50 rounded-xl text-sm" />
-        <p class="text-[10px] text-slate-400 mt-1">เช่น 15/05/1990 หรือ 15052533 (ปี พ.ศ.)</p>
+        <p class="text-[10px] text-slate-400 mt-1">8 หลัก: วัน เดือน ปีค.ศ. (เช่น 15051990)</p>
       </div>
     </div>
     
@@ -212,13 +212,25 @@ function showError(title, msg) {
 
 // ─────────── REGISTER ───────────
 async function submitRegister() {
-  const empId = document.getElementById('regEmpId').value.trim().toUpperCase();
-  const birth = document.getElementById('regBirth').value.trim();
+  const cardNo = document.getElementById('regCardNo').value.replace(/\D/g, '');
+  const birth = document.getElementById('regBirth').value.replace(/\D/g, '');
   const btn = document.getElementById('regBtn');
   const statusEl = document.getElementById('regStatus');
   
-  if (!empId || !birth) {
+  if (!cardNo || !birth) {
     statusEl.innerHTML = '❌ กรุณากรอกข้อมูลให้ครบ';
+    statusEl.className = 'text-xs text-center text-rose-600 font-bold min-h-[20px] mt-3';
+    return;
+  }
+  
+  if (cardNo.length !== 13) {
+    statusEl.innerHTML = '❌ เลขบัตรต้องมี 13 หลัก';
+    statusEl.className = 'text-xs text-center text-rose-600 font-bold min-h-[20px] mt-3';
+    return;
+  }
+  
+  if (birth.length !== 8) {
+    statusEl.innerHTML = '❌ วันเกิดต้องมี 8 หลัก (ววดดปปปป)';
     statusEl.className = 'text-xs text-center text-rose-600 font-bold min-h-[20px] mt-3';
     return;
   }
@@ -232,7 +244,7 @@ async function submitRegister() {
       action: 'liff_register',
       lineUserId: userProfile.userId,
       lineName: userProfile.displayName,
-      empId: empId,
+      cardNo: cardNo,
       birthDate: birth
     });
     
