@@ -14,6 +14,7 @@
   }
   .scale-mirror { transform: scaleX(-1); }
   .animate-pulse-slow { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+  input[type="text"]:focus { outline: 2px solid #9333ea; }
 </style>
 </head>
 <body class="p-4">
@@ -37,7 +38,41 @@
   <p class="text-xs text-slate-500" id="errorMsg"></p>
 </div>
 
-<!-- Main UI -->
+<!-- Registration UI (ครั้งแรก) -->
+<div id="registerUI" class="hidden">
+  <div class="bg-white rounded-2xl p-5 shadow-lg">
+    <div class="text-center mb-4">
+      <div class="text-5xl mb-2">👋</div>
+      <p class="text-base font-bold text-slate-800">ยินดีต้อนรับ!</p>
+      <p id="regLineName" class="text-sm text-violet-600 font-bold mt-1">-</p>
+      <p class="text-xs text-slate-500 mt-2">กรุณายืนยันตัวตนครั้งแรก</p>
+    </div>
+    
+    <div class="space-y-3">
+      <div>
+        <label class="text-xs text-slate-600 font-bold block mb-1">รหัสพนักงาน</label>
+        <input id="regEmpId" type="text" placeholder="TWG010" 
+          class="w-full px-4 py-3 bg-slate-50 rounded-xl text-sm uppercase font-bold" />
+      </div>
+      
+      <div>
+        <label class="text-xs text-slate-600 font-bold block mb-1">วันเกิด (วว/ดด/ปปปป)</label>
+        <input id="regBirth" type="text" placeholder="15/05/1990" inputmode="numeric"
+          class="w-full px-4 py-3 bg-slate-50 rounded-xl text-sm" />
+        <p class="text-[10px] text-slate-400 mt-1">เช่น 15/05/1990 หรือ 15052533 (ปี พ.ศ.)</p>
+      </div>
+    </div>
+    
+    <div id="regStatus" class="text-xs text-center min-h-[20px] mt-3"></div>
+    
+    <button id="regBtn" onclick="submitRegister()" 
+      class="w-full mt-4 py-3 bg-violet-600 text-white rounded-xl font-bold text-sm active:scale-95">
+      🔓 ลงทะเบียน
+    </button>
+  </div>
+</div>
+
+<!-- Main UI (ลงเวลา) -->
 <div id="mainUI" class="hidden">
   
   <!-- User Info -->
@@ -46,6 +81,7 @@
     <div class="flex-1">
       <p class="text-xs text-slate-500">สวัสดีคุณ</p>
       <p id="userName" class="text-sm font-bold text-slate-800">-</p>
+      <p id="userEmpId" class="text-[10px] text-violet-600 font-bold">-</p>
     </div>
   </div>
 
@@ -67,7 +103,6 @@
     <p id="cameraTitle" class="text-sm font-bold text-center mb-2">📸 ถ่ายเซลฟี่ยืนยันตัวตน</p>
     <p class="text-xs text-slate-500 text-center mb-3">หันหน้าเข้ากล้อง + แสงสว่างพอดี</p>
     
-    <!-- Preview area -->
     <div class="bg-slate-100 rounded-2xl overflow-hidden aspect-[3/4] mb-3 flex items-center justify-center relative">
       <div id="defaultMsg" class="text-center p-6">
         <div class="text-5xl mb-3">📷</div>
@@ -103,17 +138,19 @@
 </div>
 
 <script>
-// 🔑 LIFF Config — ใส่ LIFF ID ของ MD
+// 🔑 LIFF Config
 const LIFF_ID = '2010080308-vAnB7tAM';
 
-// 🌐 Apps Script Web App URL — จะใส่หลังจาก Deploy
-const APPS_SCRIPT_URL = 'PASTE_YOUR_APPS_SCRIPT_URL_HERE';
+// 🌐 Apps Script Web App URL
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbycsbA-O-0GTpjIPAhd-eOMM_MpQ29R11s7FyZxuqtim9-oIoN0CEYSO6UZHajLlOFh/exec';
 
 // State
 let userProfile = null;
-let selectedStatus = null;  // 'in' or 'out'
+let selectedStatus = null;
 let cameraStream = null;
-let cameraMode = 'idle';    // 'idle' | 'live'
+let cameraMode = 'idle';
+let registeredEmpId = '';
+let registeredEmpName = '';
 
 // ─────────── INIT LIFF ───────────
 async function initLiff() {
@@ -127,23 +164,101 @@ async function initLiff() {
     
     userProfile = await liff.getProfile();
     
-    document.getElementById('userName').textContent = userProfile.displayName;
-    document.getElementById('userPicture').src = userProfile.pictureUrl || 'https://via.placeholder.com/48';
+    // เช็คว่าลงทะเบียนหรือยัง
+    const checkResult = await callBackend({
+      action: 'liff_check_user',
+      lineUserId: userProfile.userId,
+      lineName: userProfile.displayName
+    });
     
     document.getElementById('loadingState').classList.add('hidden');
-    document.getElementById('mainUI').classList.remove('hidden');
+    
+    if (checkResult.registered) {
+      // ลงทะเบียนแล้ว → แสดงหน้าลงเวลา
+      registeredEmpId = checkResult.empId;
+      registeredEmpName = checkResult.empName;
+      showMainUI();
+    } else {
+      // ยังไม่ได้ลงทะเบียน → แสดงฟอร์ม
+      showRegisterUI();
+    }
     
   } catch (e) {
-    showError('ไม่สามารถเชื่อมต่อ LINE', e.message);
+    showError('ไม่สามารถเชื่อมต่อ', e.message);
   }
+}
+
+function showMainUI() {
+  document.getElementById('userName').textContent = registeredEmpName;
+  document.getElementById('userEmpId').textContent = registeredEmpId;
+  document.getElementById('userPicture').src = userProfile.pictureUrl || 'https://via.placeholder.com/48';
+  document.getElementById('mainUI').classList.remove('hidden');
+  document.getElementById('registerUI').classList.add('hidden');
+}
+
+function showRegisterUI() {
+  document.getElementById('regLineName').textContent = userProfile.displayName;
+  document.getElementById('registerUI').classList.remove('hidden');
 }
 
 function showError(title, msg) {
   document.getElementById('loadingState').classList.add('hidden');
   document.getElementById('mainUI').classList.add('hidden');
+  document.getElementById('registerUI').classList.add('hidden');
   document.getElementById('errorState').classList.remove('hidden');
   document.getElementById('errorTitle').textContent = title;
   document.getElementById('errorMsg').textContent = msg || '';
+}
+
+// ─────────── REGISTER ───────────
+async function submitRegister() {
+  const empId = document.getElementById('regEmpId').value.trim().toUpperCase();
+  const birth = document.getElementById('regBirth').value.trim();
+  const btn = document.getElementById('regBtn');
+  const statusEl = document.getElementById('regStatus');
+  
+  if (!empId || !birth) {
+    statusEl.innerHTML = '❌ กรุณากรอกข้อมูลให้ครบ';
+    statusEl.className = 'text-xs text-center text-rose-600 font-bold min-h-[20px] mt-3';
+    return;
+  }
+  
+  btn.disabled = true;
+  btn.innerHTML = '⏳ กำลังตรวจสอบ...';
+  statusEl.innerHTML = '';
+  
+  try {
+    const result = await callBackend({
+      action: 'liff_register',
+      lineUserId: userProfile.userId,
+      lineName: userProfile.displayName,
+      empId: empId,
+      birthDate: birth
+    });
+    
+    if (result.success) {
+      registeredEmpId = result.empId;
+      registeredEmpName = result.empName;
+      
+      statusEl.innerHTML = '✅ ลงทะเบียนสำเร็จ!';
+      statusEl.className = 'text-xs text-center text-emerald-600 font-bold min-h-[20px] mt-3';
+      
+      setTimeout(() => {
+        document.getElementById('registerUI').classList.add('hidden');
+        showMainUI();
+      }, 1000);
+    } else {
+      btn.disabled = false;
+      btn.innerHTML = '🔓 ลงทะเบียน';
+      statusEl.innerHTML = '❌ ' + (result.error || 'ลงทะเบียนไม่สำเร็จ');
+      statusEl.className = 'text-xs text-center text-rose-600 font-bold min-h-[20px] mt-3';
+    }
+  } catch (e) {
+    btn.disabled = false;
+    btn.innerHTML = '🔓 ลงทะเบียน';
+    statusEl.innerHTML = '❌ ' + e.message;
+    statusEl.className = 'text-xs text-center text-rose-600 font-bold min-h-[20px] mt-3';
+  }
 }
 
 // ─────────── STATUS SELECTION ───────────
@@ -178,29 +293,22 @@ function resetCameraUI() {
 async function onCameraClick() {
   const btn = document.getElementById('cameraBtn');
   
-  // ถ้ากำลังถ่ายอยู่ → capture frame
   if (cameraMode === 'live') {
     capturePhoto();
     return;
   }
   
-  // ถ้ามีรูปแล้ว → ส่ง
   if (cameraMode === 'captured') {
     sendPhoto();
     return;
   }
   
-  // โหมด idle → เปิดกล้อง
   btn.disabled = true;
   document.getElementById('status').innerHTML = '⏳ กำลังเปิดกล้อง...';
   
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: { 
-        facingMode: 'user',
-        width: { ideal: 640 },
-        height: { ideal: 800 }
-      },
+      video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 800 } },
       audio: false
     });
     
@@ -219,7 +327,7 @@ async function onCameraClick() {
     
   } catch (e) {
     btn.disabled = false;
-    document.getElementById('status').innerHTML = '❌ ไม่สามารถเปิดกล้องได้: ' + e.message;
+    document.getElementById('status').innerHTML = '❌ ' + e.message;
     document.getElementById('status').className = 'text-xs text-center text-rose-600 mb-3 min-h-[20px]';
   }
 }
@@ -232,32 +340,28 @@ function capturePhoto() {
   canvas.height = video.videoHeight;
   const ctx = canvas.getContext('2d');
   
-  // ไม่ flip — กล้องสด mirror อยู่แล้ว เก็บภาพที่ถูกต้อง
   ctx.save();
   ctx.translate(canvas.width, 0);
   ctx.scale(-1, 1);
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
   ctx.restore();
   
-  // เพิ่ม Watermark
   addWatermark(ctx, canvas);
   
   const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
   
-  // แสดง preview
   const img = document.getElementById('previewImg');
   img.src = dataUrl;
   img.classList.remove('hidden');
   document.getElementById('video').classList.add('hidden');
   
-  // หยุดกล้อง
   stopCamera();
   cameraMode = 'captured';
   
   document.getElementById('cameraBtn').innerHTML = '📤 ส่ง';
   document.getElementById('status').innerHTML = '✅ ถ่ายเรียบร้อย — กดส่งเพื่อบันทึก';
+  document.getElementById('status').className = 'text-xs text-center text-emerald-600 font-bold mb-3 min-h-[20px]';
   
-  // เก็บ dataUrl ไว้ใช้ส่ง
   window.capturedDataUrl = dataUrl;
 }
 
@@ -269,23 +373,20 @@ function addWatermark(ctx, canvas) {
   const stripH = canvas.height * 0.22;
   const stripY = canvas.height - stripH;
   
-  // พื้นหลัง strip
   ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
   ctx.fillRect(0, stripY, canvas.width, stripH);
   
-  // ข้อความ
   ctx.fillStyle = '#ffffff';
   ctx.textBaseline = 'top';
   
   const fontSize = Math.max(canvas.width / 30, 14);
-  ctx.font = `bold ${fontSize}px sans-serif`;
-  
   const padding = canvas.width * 0.03;
   let y = stripY + padding;
   const lineH = fontSize * 1.3;
   
-  // บรรทัด 1: ชื่อพนักงาน
-  ctx.fillText(userProfile.displayName, padding, y);
+  // บรรทัด 1: ชื่อ + รหัสพนักงาน
+  ctx.font = `bold ${fontSize}px sans-serif`;
+  ctx.fillText(registeredEmpId + ' ' + registeredEmpName, padding, y);
   y += lineH;
   
   // บรรทัด 2: วันที่ + เวลา
@@ -300,7 +401,7 @@ function addWatermark(ctx, canvas) {
   ctx.font = `bold ${fontSize * 0.95}px sans-serif`;
   ctx.fillText(statusText, padding, y);
   
-  // มุมขวาล่าง — แบรนด์
+  // มุมขวาล่าง
   ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
   ctx.font = `bold ${fontSize * 0.75}px sans-serif`;
   ctx.textAlign = 'right';
@@ -324,24 +425,12 @@ async function sendPhoto() {
   document.getElementById('status').className = 'text-xs text-center text-amber-600 font-bold mb-3 min-h-[20px]';
   
   try {
-    if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.startsWith('PASTE_')) {
-      throw new Error('ยังไม่ได้ตั้งค่า Backend URL');
-    }
-    
-    const response = await fetch(APPS_SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },  // ใช้ text/plain เพื่อหลีกเลี่ยง CORS preflight
-      body: JSON.stringify({
-        action: 'liff_face_scan',
-        lineUserId: userProfile.userId,
-        lineName: userProfile.displayName,
-        status: selectedStatus,
-        photoBase64: window.capturedDataUrl,
-        timestamp: new Date().toISOString()
-      })
+    const result = await callBackend({
+      action: 'liff_face_scan',
+      lineUserId: userProfile.userId,
+      status: selectedStatus,
+      photoBase64: window.capturedDataUrl
     });
-    
-    const result = await response.json();
     
     if (result.success) {
       document.getElementById('cameraBox').classList.add('hidden');
@@ -363,6 +452,16 @@ function closeLiff() {
   if (liff && liff.closeWindow) {
     liff.closeWindow();
   }
+}
+
+// ─────────── BACKEND HELPER ───────────
+async function callBackend(payload) {
+  const response = await fetch(APPS_SCRIPT_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain' },
+    body: JSON.stringify(payload)
+  });
+  return await response.json();
 }
 
 // ─────────── START ───────────
