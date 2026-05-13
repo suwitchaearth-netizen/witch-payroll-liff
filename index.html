@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>The Witch Group | ถ่ายเซลฟี่ลงเวลา</title>
+<script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { 
+    font-family: 'Sarabun', sans-serif; 
+    background: linear-gradient(135deg, #f3e8ff 0%, #fce7f3 100%);
+    min-height: 100vh;
+  }
+  .scale-mirror { transform: scaleX(-1); }
+  .animate-pulse-slow { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+</style>
+</head>
+<body class="p-4">
+
+<!-- Header -->
+<div class="text-center mb-4 pt-2">
+  <h1 class="text-xl font-bold text-violet-700">🧙‍♀️ THE WITCH GROUP</h1>
+  <p class="text-xs text-slate-500">ระบบลงเวลาเข้า-ออกงาน</p>
+</div>
+
+<!-- Loading state -->
+<div id="loadingState" class="bg-white rounded-2xl p-6 text-center shadow-lg">
+  <div class="text-4xl mb-3 animate-pulse-slow">⏳</div>
+  <p class="text-sm text-slate-600 font-bold">กำลังโหลด...</p>
+</div>
+
+<!-- Error state -->
+<div id="errorState" class="hidden bg-white rounded-2xl p-6 text-center shadow-lg">
+  <div class="text-5xl mb-3">⚠️</div>
+  <p class="text-sm text-slate-700 font-bold mb-2" id="errorTitle">เกิดข้อผิดพลาด</p>
+  <p class="text-xs text-slate-500" id="errorMsg"></p>
+</div>
+
+<!-- Main UI -->
+<div id="mainUI" class="hidden">
+  
+  <!-- User Info -->
+  <div class="bg-white rounded-2xl p-4 shadow-lg mb-4 flex items-center gap-3">
+    <img id="userPicture" class="w-12 h-12 rounded-full border-2 border-violet-300" />
+    <div class="flex-1">
+      <p class="text-xs text-slate-500">สวัสดีคุณ</p>
+      <p id="userName" class="text-sm font-bold text-slate-800">-</p>
+    </div>
+  </div>
+
+  <!-- Status Selection -->
+  <div id="statusBox" class="bg-white rounded-2xl p-4 shadow-lg mb-4">
+    <p class="text-sm font-bold text-slate-700 mb-3 text-center">เลือกประเภทการลงเวลา</p>
+    <div class="grid grid-cols-2 gap-3">
+      <button onclick="selectStatus('in')" class="py-4 bg-gradient-to-br from-emerald-500 to-teal-500 text-white rounded-xl font-bold text-sm active:scale-95 shadow-md">
+        ✅ เข้างาน
+      </button>
+      <button onclick="selectStatus('out')" class="py-4 bg-gradient-to-br from-rose-500 to-pink-500 text-white rounded-xl font-bold text-sm active:scale-95 shadow-md">
+        🚪 เลิกงาน
+      </button>
+    </div>
+  </div>
+
+  <!-- Camera Box -->
+  <div id="cameraBox" class="hidden bg-white rounded-2xl p-4 shadow-lg mb-4">
+    <p id="cameraTitle" class="text-sm font-bold text-center mb-2">📸 ถ่ายเซลฟี่ยืนยันตัวตน</p>
+    <p class="text-xs text-slate-500 text-center mb-3">หันหน้าเข้ากล้อง + แสงสว่างพอดี</p>
+    
+    <!-- Preview area -->
+    <div class="bg-slate-100 rounded-2xl overflow-hidden aspect-[3/4] mb-3 flex items-center justify-center relative">
+      <div id="defaultMsg" class="text-center p-6">
+        <div class="text-5xl mb-3">📷</div>
+        <p class="text-sm text-slate-600 font-bold">แตะปุ่ม "เปิดกล้อง"</p>
+      </div>
+      <video id="video" autoplay playsinline class="hidden w-full h-full object-cover scale-mirror"></video>
+      <img id="previewImg" class="hidden w-full h-full object-cover" />
+    </div>
+    
+    <div id="status" class="text-xs text-center text-slate-500 mb-3 min-h-[20px]"></div>
+    
+    <canvas id="canvas" class="hidden"></canvas>
+    
+    <div class="grid grid-cols-2 gap-2">
+      <button onclick="cancelCamera()" class="py-3 bg-slate-200 text-slate-700 rounded-xl font-bold text-sm">
+        ❌ ยกเลิก
+      </button>
+      <button id="cameraBtn" onclick="onCameraClick()" class="py-3 bg-emerald-500 text-white rounded-xl font-bold text-sm active:scale-95">
+        📷 เปิดกล้อง
+      </button>
+    </div>
+  </div>
+
+  <!-- Success state -->
+  <div id="successBox" class="hidden bg-white rounded-2xl p-6 text-center shadow-lg">
+    <div class="text-6xl mb-3">✅</div>
+    <p class="text-base font-bold text-slate-800 mb-1">บันทึกสำเร็จ!</p>
+    <p id="successMsg" class="text-xs text-slate-500 mb-4"></p>
+    <button onclick="closeLiff()" class="px-8 py-3 bg-violet-600 text-white rounded-xl font-bold text-sm">
+      ปิดหน้าต่าง
+    </button>
+  </div>
+</div>
+
+<script>
+// 🔑 LIFF Config — ใส่ LIFF ID ของ MD
+const LIFF_ID = '2010080308-vAnB7tAM';
+
+// 🌐 Apps Script Web App URL — จะใส่หลังจาก Deploy
+const APPS_SCRIPT_URL = 'PASTE_YOUR_APPS_SCRIPT_URL_HERE';
+
+// State
+let userProfile = null;
+let selectedStatus = null;  // 'in' or 'out'
+let cameraStream = null;
+let cameraMode = 'idle';    // 'idle' | 'live'
+
+// ─────────── INIT LIFF ───────────
+async function initLiff() {
+  try {
+    await liff.init({ liffId: LIFF_ID });
+    
+    if (!liff.isLoggedIn()) {
+      liff.login();
+      return;
+    }
+    
+    userProfile = await liff.getProfile();
+    
+    document.getElementById('userName').textContent = userProfile.displayName;
+    document.getElementById('userPicture').src = userProfile.pictureUrl || 'https://via.placeholder.com/48';
+    
+    document.getElementById('loadingState').classList.add('hidden');
+    document.getElementById('mainUI').classList.remove('hidden');
+    
+  } catch (e) {
+    showError('ไม่สามารถเชื่อมต่อ LINE', e.message);
+  }
+}
+
+function showError(title, msg) {
+  document.getElementById('loadingState').classList.add('hidden');
+  document.getElementById('mainUI').classList.add('hidden');
+  document.getElementById('errorState').classList.remove('hidden');
+  document.getElementById('errorTitle').textContent = title;
+  document.getElementById('errorMsg').textContent = msg || '';
+}
+
+// ─────────── STATUS SELECTION ───────────
+function selectStatus(status) {
+  selectedStatus = status;
+  document.getElementById('statusBox').classList.add('hidden');
+  document.getElementById('cameraBox').classList.remove('hidden');
+  
+  const title = status === 'in' ? '✅ ถ่ายเซลฟี่ — เข้างาน' : '🚪 ถ่ายเซลฟี่ — เลิกงาน';
+  document.getElementById('cameraTitle').textContent = title;
+}
+
+function cancelCamera() {
+  stopCamera();
+  selectedStatus = null;
+  document.getElementById('cameraBox').classList.add('hidden');
+  document.getElementById('statusBox').classList.remove('hidden');
+  resetCameraUI();
+}
+
+function resetCameraUI() {
+  document.getElementById('defaultMsg').classList.remove('hidden');
+  document.getElementById('video').classList.add('hidden');
+  document.getElementById('previewImg').classList.add('hidden');
+  document.getElementById('cameraBtn').innerHTML = '📷 เปิดกล้อง';
+  document.getElementById('cameraBtn').disabled = false;
+  document.getElementById('status').innerHTML = '';
+  cameraMode = 'idle';
+}
+
+// ─────────── CAMERA ───────────
+async function onCameraClick() {
+  const btn = document.getElementById('cameraBtn');
+  
+  // ถ้ากำลังถ่ายอยู่ → capture frame
+  if (cameraMode === 'live') {
+    capturePhoto();
+    return;
+  }
+  
+  // ถ้ามีรูปแล้ว → ส่ง
+  if (cameraMode === 'captured') {
+    sendPhoto();
+    return;
+  }
+  
+  // โหมด idle → เปิดกล้อง
+  btn.disabled = true;
+  document.getElementById('status').innerHTML = '⏳ กำลังเปิดกล้อง...';
+  
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { 
+        facingMode: 'user',
+        width: { ideal: 640 },
+        height: { ideal: 800 }
+      },
+      audio: false
+    });
+    
+    cameraStream = stream;
+    cameraMode = 'live';
+    
+    const video = document.getElementById('video');
+    video.srcObject = stream;
+    video.classList.remove('hidden');
+    document.getElementById('defaultMsg').classList.add('hidden');
+    
+    btn.innerHTML = '📸 ถ่าย';
+    btn.disabled = false;
+    document.getElementById('status').innerHTML = '✅ พร้อมถ่าย';
+    document.getElementById('status').className = 'text-xs text-center text-emerald-600 font-bold mb-3 min-h-[20px]';
+    
+  } catch (e) {
+    btn.disabled = false;
+    document.getElementById('status').innerHTML = '❌ ไม่สามารถเปิดกล้องได้: ' + e.message;
+    document.getElementById('status').className = 'text-xs text-center text-rose-600 mb-3 min-h-[20px]';
+  }
+}
+
+function capturePhoto() {
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('canvas');
+  
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  const ctx = canvas.getContext('2d');
+  
+  // ไม่ flip — กล้องสด mirror อยู่แล้ว เก็บภาพที่ถูกต้อง
+  ctx.save();
+  ctx.translate(canvas.width, 0);
+  ctx.scale(-1, 1);
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  ctx.restore();
+  
+  // เพิ่ม Watermark
+  addWatermark(ctx, canvas);
+  
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+  
+  // แสดง preview
+  const img = document.getElementById('previewImg');
+  img.src = dataUrl;
+  img.classList.remove('hidden');
+  document.getElementById('video').classList.add('hidden');
+  
+  // หยุดกล้อง
+  stopCamera();
+  cameraMode = 'captured';
+  
+  document.getElementById('cameraBtn').innerHTML = '📤 ส่ง';
+  document.getElementById('status').innerHTML = '✅ ถ่ายเรียบร้อย — กดส่งเพื่อบันทึก';
+  
+  // เก็บ dataUrl ไว้ใช้ส่ง
+  window.capturedDataUrl = dataUrl;
+}
+
+function addWatermark(ctx, canvas) {
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('th-TH', { year: 'numeric', month: '2-digit', day: '2-digit' });
+  const timeStr = now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  
+  const stripH = canvas.height * 0.22;
+  const stripY = canvas.height - stripH;
+  
+  // พื้นหลัง strip
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+  ctx.fillRect(0, stripY, canvas.width, stripH);
+  
+  // ข้อความ
+  ctx.fillStyle = '#ffffff';
+  ctx.textBaseline = 'top';
+  
+  const fontSize = Math.max(canvas.width / 30, 14);
+  ctx.font = `bold ${fontSize}px sans-serif`;
+  
+  const padding = canvas.width * 0.03;
+  let y = stripY + padding;
+  const lineH = fontSize * 1.3;
+  
+  // บรรทัด 1: ชื่อพนักงาน
+  ctx.fillText(userProfile.displayName, padding, y);
+  y += lineH;
+  
+  // บรรทัด 2: วันที่ + เวลา
+  ctx.font = `${fontSize * 0.85}px sans-serif`;
+  ctx.fillText(`📅 ${dateStr}  🕐 ${timeStr}`, padding, y);
+  y += lineH * 0.85;
+  
+  // บรรทัด 3: สถานะ
+  const statusColor = selectedStatus === 'in' ? '#10b981' : '#f43f5e';
+  const statusText = selectedStatus === 'in' ? '✅ เข้างาน' : '🚪 เลิกงาน';
+  ctx.fillStyle = statusColor;
+  ctx.font = `bold ${fontSize * 0.95}px sans-serif`;
+  ctx.fillText(statusText, padding, y);
+  
+  // มุมขวาล่าง — แบรนด์
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+  ctx.font = `bold ${fontSize * 0.75}px sans-serif`;
+  ctx.textAlign = 'right';
+  ctx.fillText('THE WITCH', canvas.width - padding, stripY + stripH - lineH * 0.8);
+  ctx.textAlign = 'left';
+}
+
+function stopCamera() {
+  if (cameraStream) {
+    cameraStream.getTracks().forEach(t => t.stop());
+    cameraStream = null;
+  }
+}
+
+// ─────────── SEND TO BACKEND ───────────
+async function sendPhoto() {
+  const btn = document.getElementById('cameraBtn');
+  btn.disabled = true;
+  btn.innerHTML = '⏳ กำลังส่ง...';
+  document.getElementById('status').innerHTML = '⏳ กำลังบันทึก...';
+  document.getElementById('status').className = 'text-xs text-center text-amber-600 font-bold mb-3 min-h-[20px]';
+  
+  try {
+    if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.startsWith('PASTE_')) {
+      throw new Error('ยังไม่ได้ตั้งค่า Backend URL');
+    }
+    
+    const response = await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },  // ใช้ text/plain เพื่อหลีกเลี่ยง CORS preflight
+      body: JSON.stringify({
+        action: 'liff_face_scan',
+        lineUserId: userProfile.userId,
+        lineName: userProfile.displayName,
+        status: selectedStatus,
+        photoBase64: window.capturedDataUrl,
+        timestamp: new Date().toISOString()
+      })
+    });
+    
+    const result = await response.json();
+    
+    if (result.success) {
+      document.getElementById('cameraBox').classList.add('hidden');
+      document.getElementById('successBox').classList.remove('hidden');
+      document.getElementById('successMsg').textContent = result.message || 'บันทึกเรียบร้อย';
+    } else {
+      throw new Error(result.error || 'บันทึกไม่สำเร็จ');
+    }
+    
+  } catch (e) {
+    btn.disabled = false;
+    btn.innerHTML = '🔄 ลองอีกครั้ง';
+    document.getElementById('status').innerHTML = '❌ ' + e.message;
+    document.getElementById('status').className = 'text-xs text-center text-rose-600 mb-3 min-h-[20px]';
+  }
+}
+
+function closeLiff() {
+  if (liff && liff.closeWindow) {
+    liff.closeWindow();
+  }
+}
+
+// ─────────── START ───────────
+window.addEventListener('load', initLiff);
+</script>
+
+</body>
+</html>
