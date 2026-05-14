@@ -976,6 +976,18 @@ async function initLiff() {
     
     userProfile = await liff.getProfile();
     
+    // 🆕 GATEWAY MODE: ถ้ามี ?view=xxx ใน URL → auto-login + redirect ไป Apps Script
+    const urlParams = new URLSearchParams(window.location.search);
+    const viewParam = urlParams.get('view');
+    const validViews = ['leave', 'shift', 'punch', 'history', 'profile', 'main', 'ot'];
+    
+    if (viewParam && validViews.indexOf(viewParam) >= 0) {
+      // Gateway mode → ขอ token + redirect
+      await redirectToAppsScript(viewParam);
+      return;
+    }
+    
+    // ===== Punch flow (เดิม) =====
     const checkResult = await callBackend({
       action: 'liff_check_user',
       lineUserId: userProfile.userId,
@@ -994,6 +1006,40 @@ async function initLiff() {
     
   } catch (e) {
     showError('ไม่สามารถเชื่อมต่อ', e.message);
+  }
+}
+
+// 🌐 Gateway: auto-login → redirect ไป Apps Script
+async function redirectToAppsScript(view) {
+  try {
+    // อัพเดทข้อความ loading
+    const loadingText = document.querySelector('#loadingState .loading-text');
+    if (loadingText) loadingText.textContent = 'กำลังเข้าสู่ระบบ...';
+    
+    const result = await callBackend({
+      action: 'liff_get_login_token',
+      lineUserId: userProfile.userId
+    });
+    
+    if (result && result.success && result.token) {
+      // ✅ ได้ token → redirect ไป Apps Script
+      const targetUrl = APPS_SCRIPT_URL 
+        + '?page=attendance'
+        + '&liff_token=' + encodeURIComponent(result.token)
+        + '&view=' + encodeURIComponent(view);
+      window.location.replace(targetUrl);
+    } else {
+      // ยังไม่ได้ลงทะเบียน → กลับไปหน้า register
+      document.getElementById('loadingState').classList.add('hidden');
+      if (result && result.notRegistered) {
+        showRegisterUI();
+      } else {
+        showError('ไม่สามารถเข้าระบบได้', (result && result.error) || 'กรุณาลองใหม่');
+      }
+    }
+  } catch (e) {
+    document.getElementById('loadingState').classList.add('hidden');
+    showError('เชื่อมต่อไม่ได้', e.message);
   }
 }
 
