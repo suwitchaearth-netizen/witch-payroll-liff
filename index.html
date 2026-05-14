@@ -967,6 +967,33 @@ function setGreeting() {
 // ─────────── INIT LIFF ───────────
 async function initLiff() {
   try {
+    // 🆕 ตรวจ view param ทันที (ก่อน liff.init() เสร็จ) เพื่อโชว์ loading ที่ถูก
+    const urlParams = new URLSearchParams(window.location.search);
+    const viewParam = urlParams.get('view');
+    const validViews = ['leave', 'shift', 'punch', 'history', 'profile', 'main', 'ot'];
+    const isGatewayMode = viewParam && validViews.indexOf(viewParam) >= 0;
+    
+    // 🚀 PERFORMANCE: ถ้าเป็น gateway mode + มี cached token → redirect ทันที!
+    if (isGatewayMode) {
+      try {
+        const cachedToken = sessionStorage.getItem('witch_gateway_token');
+        const cachedExp = parseInt(sessionStorage.getItem('witch_gateway_exp') || '0', 10);
+        if (cachedToken && Date.now() < cachedExp) {
+          // ⚡ FAST PATH: มี token cached ใน session → redirect ทันที (skip LIFF init!)
+          const fastUrl = APPS_SCRIPT_URL 
+            + '?page=attendance'
+            + '&liff_token=' + encodeURIComponent(cachedToken)
+            + '&view=' + encodeURIComponent(viewParam);
+          window.location.replace(fastUrl);
+          return;
+        }
+      } catch(e) {}
+      
+      // อัพเดทข้อความ loading ทันที (ไม่ต้องรอ)
+      const loadingText = document.querySelector('#loadingState .loading-text');
+      if (loadingText) loadingText.textContent = 'กำลังเข้าสู่ระบบ...';
+    }
+    
     await liff.init({ liffId: LIFF_ID });
     
     if (!liff.isLoggedIn()) {
@@ -976,12 +1003,7 @@ async function initLiff() {
     
     userProfile = await liff.getProfile();
     
-    // 🆕 GATEWAY MODE: ถ้ามี ?view=xxx ใน URL → auto-login + redirect ไป Apps Script
-    const urlParams = new URLSearchParams(window.location.search);
-    const viewParam = urlParams.get('view');
-    const validViews = ['leave', 'shift', 'punch', 'history', 'profile', 'main', 'ot'];
-    
-    if (viewParam && validViews.indexOf(viewParam) >= 0) {
+    if (isGatewayMode) {
       // Gateway mode → ขอ token + redirect
       await redirectToAppsScript(viewParam);
       return;
@@ -1012,16 +1034,18 @@ async function initLiff() {
 // 🌐 Gateway: auto-login → redirect ไป Apps Script
 async function redirectToAppsScript(view) {
   try {
-    // อัพเดทข้อความ loading
-    const loadingText = document.querySelector('#loadingState .loading-text');
-    if (loadingText) loadingText.textContent = 'กำลังเข้าสู่ระบบ...';
-    
     const result = await callBackend({
       action: 'liff_get_login_token',
       lineUserId: userProfile.userId
     });
     
     if (result && result.success && result.token) {
+      // 🚀 Cache token ใน sessionStorage (TTL 25 นาที — กัน expired)
+      try {
+        sessionStorage.setItem('witch_gateway_token', result.token);
+        sessionStorage.setItem('witch_gateway_exp', String(Date.now() + 25 * 60 * 1000));
+      } catch(e) {}
+      
       // ✅ ได้ token → redirect ไป Apps Script
       const targetUrl = APPS_SCRIPT_URL 
         + '?page=attendance'
