@@ -744,6 +744,87 @@
     text-transform: uppercase;
   }
   
+  /* 📊 การ์ดข้อมูลวันนี้ */
+  .today-card {
+    background: var(--glass);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--glass-border);
+    border-radius: 20px;
+    padding: 16px 18px;
+    margin-bottom: 14px;
+    position: relative;
+    overflow: hidden;
+    animation: fadeIn 0.6s ease-out 0.3s backwards;
+  }
+  .today-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
+  }
+  .today-label {
+    font-size: 10px;
+    color: var(--text-muted);
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    text-align: center;
+    margin-bottom: 12px;
+  }
+  .today-times {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .today-time-box {
+    text-align: center;
+    padding: 10px 8px;
+    border-radius: 14px;
+    background: rgba(124, 58, 237, 0.1);
+    border: 1px solid rgba(212, 175, 55, 0.15);
+  }
+  .today-time-box.in  { background: rgba(52, 211, 153, 0.1); border-color: rgba(52, 211, 153, 0.25); }
+  .today-time-box.out { background: rgba(251, 113, 133, 0.1); border-color: rgba(251, 113, 133, 0.25); }
+  .today-time-icon { font-size: 16px; margin-bottom: 2px; }
+  .today-time-cap {
+    font-size: 9px;
+    color: var(--text-muted);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 3px;
+  }
+  .today-time-val {
+    font-family: 'Bai Jamjuree', monospace;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+  .today-time-box.in  .today-time-val { color: var(--emerald-glow); }
+  .today-time-box.out .today-time-val { color: var(--rose-glow); }
+  .today-shift {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px;
+    border-radius: 14px;
+    background: rgba(212, 175, 55, 0.08);
+    border: 1px solid var(--gold-soft);
+  }
+  .today-shift-icon { font-size: 16px; }
+  .today-shift-text {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--gold-bright);
+  }
+  .today-shift-time {
+    font-size: 11px;
+    color: var(--text-secondary);
+    font-family: 'Bai Jamjuree', monospace;
+  }
+  
   .hidden { display: none !important; }
   
   @keyframes fadeIn {
@@ -858,6 +939,28 @@
       </div>
     </div>
     
+    <!-- 📊 ข้อมูลวันนี้: เวลาเข้า-ออก + กะ -->
+    <div id="todayCard" class="today-card hidden">
+      <div class="today-label">⏱ ข้อมูลการลงเวลาวันนี้</div>
+      <div class="today-times">
+        <div class="today-time-box in">
+          <div class="today-time-icon">✅</div>
+          <div class="today-time-cap">เวลาเข้า</div>
+          <div class="today-time-val" id="todayInVal">--:--</div>
+        </div>
+        <div class="today-time-box out">
+          <div class="today-time-icon">🚪</div>
+          <div class="today-time-cap">เวลาออก</div>
+          <div class="today-time-val" id="todayOutVal">--:--</div>
+        </div>
+      </div>
+      <div class="today-shift">
+        <span class="today-shift-icon">🗓️</span>
+        <span class="today-shift-text" id="todayShiftName">-</span>
+        <span class="today-shift-time" id="todayShiftTime"></span>
+      </div>
+    </div>
+    
     <!-- 📸 Camera Box -->
     <div id="cameraBox" class="glass-card hidden">
       <p id="cameraTitle" class="camera-title">📸 ถ่ายเซลฟี่ยืนยันตัวตน</p>
@@ -919,6 +1022,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbycsbA-O-0GTpjI
 
 // State
 let userProfile = null;
+let _todayStatus = null;  // 📊 ข้อมูลเข้า-ออก+กะวันนี้
 let selectedStatus = null;
 let cameraStream = null;
 let cameraMode = 'idle';
@@ -1021,6 +1125,13 @@ async function initLiff() {
     if (checkResult.registered) {
       registeredEmpId = checkResult.empId;
       registeredEmpName = checkResult.empName;
+      // 📊 เก็บข้อมูลวันนี้
+      _todayStatus = {
+        todayIn: checkResult.todayIn || '',
+        todayOut: checkResult.todayOut || '',
+        shiftName: checkResult.shiftName || '',
+        shiftTime: checkResult.shiftTime || ''
+      };
       showMainUI();
     } else {
       showRegisterUI();
@@ -1070,6 +1181,23 @@ async function redirectToAppsScript(view) {
 function showMainUI() {
   document.getElementById('userName').textContent = registeredEmpName;
   document.getElementById('userEmpId').textContent = registeredEmpId;
+  
+  // 📊 แสดงข้อมูลวันนี้ (เวลาเข้า-ออก + กะ) จาก checkResult
+  try {
+    if (typeof _todayStatus !== 'undefined' && _todayStatus) {
+      const card = document.getElementById('todayCard');
+      document.getElementById('todayInVal').textContent = (_todayStatus.todayIn && _todayStatus.todayIn !== '-') ? _todayStatus.todayIn : '--:--';
+      document.getElementById('todayOutVal').textContent = (_todayStatus.todayOut && _todayStatus.todayOut !== '-') ? _todayStatus.todayOut : '--:--';
+      document.getElementById('todayShiftName').textContent = _todayStatus.shiftName || 'กะปกติ';
+      const stEl = document.getElementById('todayShiftTime');
+      if (_todayStatus.shiftTime && _todayStatus.shiftTime !== '-') {
+        stEl.textContent = '(' + _todayStatus.shiftTime + ')';
+      } else {
+        stEl.textContent = '';
+      }
+      card.classList.remove('hidden');
+    }
+  } catch(e) {}
   
   // Avatar: ถ้ามีรูปจาก LINE ใช้รูป, ไม่งั้นใช้อักษรแรกของชื่อ
   const picEl = document.getElementById('userPicture');
